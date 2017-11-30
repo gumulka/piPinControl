@@ -13,14 +13,17 @@
 #define PAYLOAD2    "CLOSED"
 #define QOS         2
 #define TIMEOUT     10000L
-
-static volatile MQTTClient client;
+#define TOPIC       "/wohnung/+/light"
 
 int initPinforObserve(int pin);
 void alertFunction(int gpio, int level, uint32_t tick);
 
+
+static MQTTClient client;
 static volatile int keepRunning = 1;
 
+
+/** the interrupt handler */
 void intHandler(int dummy) {
     keepRunning = 0;
 }
@@ -88,6 +91,31 @@ void alertFunction(int gpio, int level, uint32_t tick) {
     }
 }
 
+
+int msgarrvd(void *context, char *topicName, int topicLen, MQTTClient_message *message) {
+    int i;
+    char* payloadptr;
+
+    printf("Message arrived\n");
+    printf("     topic: %s\n", topicName);
+    printf("   message: ");
+
+    payloadptr = message->payload;
+    for(i=0; i<message->payloadlen; i++) {
+        putchar(*payloadptr++);
+    }
+    putchar('\n');
+    MQTTClient_freeMessage(&message);
+    MQTTClient_free(topicName);
+    return 1;
+}
+
+void connlost(void *context, char *cause) {
+    printf("\nConnection lost\n");
+    printf("     cause: %s\n", cause);
+    keepRunning = 0;
+}
+
 int main(int argc, char* argv[]) {
 
     /* Read config */
@@ -114,9 +142,9 @@ int main(int argc, char* argv[]) {
     /* pigpio init */
     if (gpioInitialise() < 0) {
         // pigpio initialisation failed.
+        printf("GPIO Initialisation failed");
         exit(EXIT_FAILURE);
     }
-
 
     /* MQTT init */
     MQTTClient_create(&client, ADDRESS, CLIENTID,
@@ -125,12 +153,17 @@ int main(int argc, char* argv[]) {
     conn_opts.keepAliveInterval = 20;
     conn_opts.cleansession = 1;
 
+    MQTTClient_setCallbacks(client, NULL, connlost, msgarrvd, NULL);
+
     int rc;
     if ((rc = MQTTClient_connect(client, &conn_opts)) != MQTTCLIENT_SUCCESS) {
         printf("Failed to connect, return code %d\n", rc);
         gpioTerminate();
         exit(EXIT_FAILURE);
     }
+
+    /* Subscribe to topic */
+    MQTTClient_subscribe(client, TOPIC, QOS);
 
     /* set pins for observation */
     initPinforObserve(23);
