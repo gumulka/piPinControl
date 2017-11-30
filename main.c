@@ -13,14 +13,23 @@
 #define PAYLOAD2    "CLOSED"
 #define QOS         2
 #define TIMEOUT     10000L
+#define BASE_TOPIC   "/openhab/gpio"
 
-static volatile MQTTClient client;
+#define BUFFER_SIZE 16
+#define PIN_OUTPUT 5
+#define STATE_FILE "/home/pi/light_state"
 
 int initPinforObserve(int pin);
 void alertFunction(int gpio, int level, uint32_t tick);
 
+
+static MQTTClient client;
+static int spiHandle;
+static unsigned char buffer[BUFFER_SIZE];
 static volatile int keepRunning = 1;
 
+
+/** the interrupt handler */
 void intHandler(int dummy) {
     keepRunning = 0;
 }
@@ -49,7 +58,7 @@ void alertFunction(int gpio, int level, uint32_t tick) {
     char topic[100];
 
     /* create the topic from the pin number */
-    sprintf(topic,"/openhab/iopins/%d/state",gpio);
+    sprintf(topic,"%s/%d/state",BASE_TOPIC,gpio);
 
     /* select the message based on pin state
      * translation:
@@ -88,6 +97,72 @@ void alertFunction(int gpio, int level, uint32_t tick) {
     }
 }
 
+int spiSendCommand(int pin, int state) {
+
+    int i = 0;
+    while(pin>8) {
+        pin -= 8;
+        i++;
+    }
+    if(state) {
+        buffer[i] |= (1<<pin);
+    } else {
+        buffer[i] &=  ~(1<<pin);
+    }
+    ///TODO change the 1 to i, but evaluate if it is working
+    spiWrite(spiHandle,buffer,1);
+//    printf("Setting SPI pin %d to %d\n",pin,state);
+    gpioWrite(PIN_OUTPUT,1);
+    usleep(500);
+    gpioWrite(PIN_OUTPUT,0);
+    usleep(500);
+
+    return 0;
+}
+
+int msgarrvd(void *context, char *topicName, int topicLen, MQTTClient_message *message) {
+    int i;
+    char* payloadptr;
+
+    /* Getting rid of the first part of the topic */
+    char* ptr = strtok(topicName,"/");
+    for(i = 0; i<2 && ptr != NULL;i++) {
+        ptr = strtok(NULL, "/");
+    }
+    int pin = -1;
+    /* parsing the pin number */
+    if(ptr != NULL) {
+        pin = atoi(ptr);
+    }
+
+    /* parsing the command. ON and OFF are the only possiblities. just checking the second char is enough */
+    int state = -1;
+    payloadptr = message->payload;
+    payloadptr++;
+    if(*payloadptr=='N') {
+        state = 1;
+    } else if (*payloadptr=='F') {
+        state = 0;
+    }
+
+    if(pin >= 100) {
+        spiSendCommand(pin-100,state);
+    } else {
+        // TODO Write code for non SPI-Pins.
+        // First check if pin is output, then set value
+    }
+
+    MQTTClient_freeMessage(&message);
+    MQTTClient_free(topicName);
+    return 1;
+}
+
+void connlost(void *context, char *cause) {
+    printf("\nConnection lost\n");
+    printf("     cause: %s\n", cause);
+    keepRunning = 0;
+}
+
 int main(int argc, char* argv[]) {
 
     /* Read config */
@@ -114,7 +189,34 @@ int main(int argc, char* argv[]) {
     /* pigpio init */
     if (gpioInitialise() < 0) {
         // pigpio initialisation failed.
+        printf("GPIO Initialisation failed");
         exit(EXIT_FAILURE);
+    }
+    spiHandle = spiOpen(1,500000,0);
+    if (spiHandle < 0) {
+        printf("SPI Initialisation failed");
+        // pigpio initialisation failed.
+        exit(EXIT_FAILURE);
+    }
+    int rc = gpioSetMode(OUTPUT_PIN,PI_OUTPUT);
+    if(rc!=0) {
+         printf("Setting Output pin for SPI did not work\n");
+         exit(EXIT_FAILURE);
+    }
+
+    FILE *file_ptr;
+    file_ptr = fopen(STATE_FILE,"rb");
+    if (!file_ptr) {
+        printf("Unable to open state file!\n");
+        exit(EXIT_FAILURE);
+    }
+
+    /* Read in 256 8-bit numbers into the buffer */
+    int bytes_read = fread(buffer, sizeof(unsigned char), BUFFER_SIZE, file_ptr);
+    fclose(file_ptr);
+    if (bytes_read != BUFFER_SIZE) {
+        printf("Error while reading in data! %d != %d\n", bytes_read,BUFFER_SIZE);
+//        exit(EXIT_FAILURE);
     }
 
 
@@ -125,12 +227,18 @@ int main(int argc, char* argv[]) {
     conn_opts.keepAliveInterval = 20;
     conn_opts.cleansession = 1;
 
-    int rc;
+    MQTTClient_setCallbacks(client, NULL, connlost, msgarrvd, NULL);
+
     if ((rc = MQTTClient_connect(client, &conn_opts)) != MQTTCLIENT_SUCCESS) {
         printf("Failed to connect, return code %d\n", rc);
         gpioTerminate();
         exit(EXIT_FAILURE);
     }
+
+    /* Subscribe to topic */
+    char topicbuffer[100];
+    sprintf(topicbuffer,"%s/+/command",BASE_TOPIC);
+    MQTTClient_subscribe(client, topicbuffer, QOS);
 
     /* set pins for observation */
     initPinforObserve(23);
@@ -147,6 +255,7 @@ int main(int argc, char* argv[]) {
     /* cleanup */
     MQTTClient_disconnect(client, 10000);
     MQTTClient_destroy(&client);
+    spiClose(spiHandle);
     gpioTerminate();
     return EXIT_SUCCESS;
 }
