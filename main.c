@@ -99,7 +99,24 @@ void alertFunction(int gpio, int level, uint32_t tick) {
 
 int spiSendCommand(int pin, int state) {
 
-    printf("Setting SPI pin %d to %d\n",pin,state);
+    int i = 0;
+    while(pin>8) {
+        pin -= 8;
+        i++;
+    }
+    if(state) {
+        buffer[i] |= (1<<pin);
+    } else {
+        buffer[i] &=  ~(1<<pin);
+    }
+    ///TODO change the 1 to i, but evaluate if it is working
+    spiWrite(spiHandle,buffer,1);
+//    printf("Setting SPI pin %d to %d\n",pin,state);
+    gpioWrite(PIN_OUTPUT,1);
+    usleep(500);
+    gpioWrite(PIN_OUTPUT,0);
+    usleep(500);
+
     return 0;
 }
 
@@ -181,7 +198,11 @@ int main(int argc, char* argv[]) {
         // pigpio initialisation failed.
         exit(EXIT_FAILURE);
     }
-
+    int rc = gpioSetMode(OUTPUT_PIN,PI_OUTPUT);
+    if(rc!=0) {
+         printf("Setting Output pin for SPI did not work\n");
+         exit(EXIT_FAILURE);
+    }
 
     FILE *file_ptr;
     file_ptr = fopen(STATE_FILE,"rb");
@@ -208,7 +229,6 @@ int main(int argc, char* argv[]) {
 
     MQTTClient_setCallbacks(client, NULL, connlost, msgarrvd, NULL);
 
-    int rc;
     if ((rc = MQTTClient_connect(client, &conn_opts)) != MQTTCLIENT_SUCCESS) {
         printf("Failed to connect, return code %d\n", rc);
         gpioTerminate();
