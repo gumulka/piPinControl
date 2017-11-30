@@ -60,6 +60,10 @@ void alertFunction(int gpio, int level, uint32_t tick) {
     /* create the topic from the pin number */
     sprintf(topic,"%s/%d/state",BASE_TOPIC,gpio);
 
+    /* after receiving the interrupt wait for 100 ms to compensate bouncing */
+    usleep(100*1000);
+    level = gpioRead(gpio);
+
     /* select the message based on pin state
      * translation:
      *  1->"OPEN"
