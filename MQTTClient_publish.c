@@ -18,6 +18,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <signal.h>
 #include "MQTTClient.h"
 
 #define ADDRESS     "tcp://192.168.0.4:1883"
@@ -34,7 +35,11 @@ MQTTClient client;
 int initPinforObserve(int pin);
 void alertFunction(int gpio, int level, uint32_t tick);
 
+static volatile int keepRunning = 1;
 
+void intHandler(int dummy) {
+    keepRunning = 0;
+}
 
 int initPinforObserve(int pin) {
 	int rc = gpioSetMode(pin,PI_INPUT);
@@ -136,30 +141,13 @@ int main(int argc, char* argv[]) {
 	/* set pins for observation */
 	initPinforObserve(23);
 
+	/* init signal handling */
+	signal(SIGINT, intHandler);
 
 	/* spin around and do nothing */
-	while(1) {
+	while(keepRunning) {
         sleep(5);
 	}
-
-    for(i=0;i<4;i++) {
-        MQTTClient_publishMessage(client, TOPIC, &open, &token);
-        printf("Waiting for up to %d seconds for publication of %s\n"
-            "on topic %s for client with ClientID: %s\n",
-            (int)(TIMEOUT/1000), PAYLOAD1, TOPIC, CLIENTID);
-        rc = MQTTClient_waitForCompletion(client, token, TIMEOUT);
-        if(rc!=0)
-            return rc;
-        sleep(1);
-        MQTTClient_publishMessage(client, TOPIC, &close, &token);
-        printf("Waiting for up to %d seconds for publication of %s\n"
-            "on topic %s for client with ClientID: %s\n",
-            (int)(TIMEOUT/1000), PAYLOAD2, TOPIC, CLIENTID);
-        rc = MQTTClient_waitForCompletion(client, token, TIMEOUT);
-        if(rc!=0)
-            return rc;
-        sleep(5);
-    }
 
     MQTTClient_disconnect(client, 10000);
     MQTTClient_destroy(&client);
