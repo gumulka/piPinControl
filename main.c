@@ -4,17 +4,17 @@
 #include <unistd.h>
 #include <signal.h>
 #include "MQTTClient.h"
+#include  <pigpio.h>
+
 
 #define ADDRESS     "tcp://192.168.0.4:1883"
 #define CLIENTID    "ExampleClientPub"
-#define TOPIC       "/openhab/Flur_Switch_v/state"
-#define PAYLOAD1     "OPEN"
-#define PAYLOAD2     "CLOSED"
+#define PAYLOAD1    "OPEN"
+#define PAYLOAD2    "CLOSED"
 #define QOS         2
 #define TIMEOUT     10000L
 
-MQTTClient_message open, close;
-MQTTClient client;
+static volatile MQTTClient client;
 
 int initPinforObserve(int pin);
 void alertFunction(int gpio, int level, uint32_t tick);
@@ -39,6 +39,8 @@ int initPinforObserve(int pin) {
 
     /* activate pin observation */
     gpioSetAlertFunc(pin,alertFunction);
+
+    return 0;
 }
 
 void alertFunction(int gpio, int level, uint32_t tick) {
@@ -54,28 +56,33 @@ void alertFunction(int gpio, int level, uint32_t tick) {
      *  1->"OPEN"
      *  0->"CLOSED"
      */
-    MQTTClient_message m;
+    MQTTClient_message m = MQTTClient_message_initializer;
     if(level==0) {
-        m = open;
+        m.payload = PAYLOAD1;
+        m.payloadlen = strlen(PAYLOAD1);
     } else if(level==1){
-        m = close;
+        m.payload = PAYLOAD2;
+        m.payloadlen = strlen(PAYLOAD2);
     } else {
         /* ignore all other states
          * Could be 2 if timeout hits */
         return ;
     }
+    m.qos = QOS;
+    m.retained = 0;
+
 
     /* publish the message and wait for completion */
     MQTTClient_publishMessage(client, topic, &m, &token);
-    printf("Waiting for up to %d seconds for publication of %s\n"
+/*    printf("Waiting for up to %d seconds for publication of %s\n"
             "on topic %s for client with ClientID: %s\n",
-            (int)(TIMEOUT/1000), m.payload, topic, CLIENTID);
+            (int)(TIMEOUT/1000),(char*) m.payload, topic, CLIENTID); */
     /// this might be not necessary. Should be evaluated!
     rc = MQTTClient_waitForCompletion(client, token, TIMEOUT);
 
     /* report to the user about errors */
     if(rc!=0) {
-        printf("Error while sending message!\n");
+        printf("Error while sending message! - %d\n", rc);
         /* don't stop the program. Just report.
         keepRunning = 0; */
     }
@@ -118,25 +125,12 @@ int main(int argc, char* argv[]) {
     conn_opts.keepAliveInterval = 20;
     conn_opts.cleansession = 1;
 
+    int rc;
     if ((rc = MQTTClient_connect(client, &conn_opts)) != MQTTCLIENT_SUCCESS) {
         printf("Failed to connect, return code %d\n", rc);
         gpioTerminate();
         exit(EXIT_FAILURE);
     }
-
-    /* Initialize the two possible messages */
-    open = MQTTClient_message_initializer;
-    open.payload = PAYLOAD1;
-    open.payloadlen = strlen(PAYLOAD1);
-    open.qos = QOS;
-    open.retained = 0;
-
-    close = MQTTClient_message_initializer;
-    close.payload = PAYLOAD2;
-    close.payloadlen = strlen(PAYLOAD2);
-    close.qos = QOS;
-    close.retained = 0;
-
 
     /* set pins for observation */
     initPinforObserve(23);
@@ -149,6 +143,7 @@ int main(int argc, char* argv[]) {
         sleep(1);
     }
 
+    printf("\rShutting Down\n");
     /* cleanup */
     MQTTClient_disconnect(client, 10000);
     MQTTClient_destroy(&client);
