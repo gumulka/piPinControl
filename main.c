@@ -25,7 +25,7 @@ void alertFunction(int gpio, int level, uint32_t tick);
 
 static MQTTClient client;
 static int spiHandle;
-static unsigned char buffer[BUFFER_SIZE];
+static char buffer[BUFFER_SIZE];
 static volatile int keepRunning = 1;
 
 
@@ -198,7 +198,7 @@ int main(int argc, char* argv[]) {
         // pigpio initialisation failed.
         exit(EXIT_FAILURE);
     }
-    int rc = gpioSetMode(OUTPUT_PIN,PI_OUTPUT);
+    int rc = gpioSetMode(PIN_OUTPUT,PI_OUTPUT);
     if(rc!=0) {
          printf("Setting Output pin for SPI did not work\n");
          exit(EXIT_FAILURE);
@@ -241,7 +241,15 @@ int main(int argc, char* argv[]) {
     MQTTClient_subscribe(client, topicbuffer, QOS);
 
     /* set pins for observation */
+    initPinforObserve(6);
+    initPinforObserve(18);
+    initPinforObserve(22);
+    initPinforObserve(13);
     initPinforObserve(23);
+    initPinforObserve(24);
+    initPinforObserve(27);
+    initPinforObserve(17);
+    initPinforObserve(25);
 
     /* init signal handling */
     signal(SIGINT, intHandler);
@@ -253,6 +261,12 @@ int main(int argc, char* argv[]) {
 
     printf("\rShutting Down\n");
     /* cleanup */
+    file_ptr = fopen(STATE_FILE,"wb");
+    if (!file_ptr) {
+        printf("Unable to open file for write!\n");
+    }
+    fwrite(buffer,1,bytes_read,file_ptr);
+    fclose(file_ptr);
     MQTTClient_disconnect(client, 10000);
     MQTTClient_destroy(&client);
     spiClose(spiHandle);
