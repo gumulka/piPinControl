@@ -42,48 +42,62 @@ void intHandler(int dummy) {
 }
 
 int initPinforObserve(int pin) {
-	int rc = gpioSetMode(pin,PI_INPUT);
-	if(rc!=0) {
-		return rc;
-	}
+    /* set pin mode */
+    int rc = gpioSetMode(pin,PI_INPUT);
+    /* return error code if there was any */
+    if(rc!=0) {
+        return rc;
+    }
 
-	int level = gpioRead(pin);
-	alertFunction(pin,level,0);
+    /* read and publish the current state */
+    int level = gpioRead(pin);
+    alertFunction(pin,level,0);
 
-	gpioSetAlertFunc(pin,alertFunction);
+    /* activate pin observation */
+    gpioSetAlertFunc(pin,alertFunction);
 }
 
 void alertFunction(int gpio, int level, uint32_t tick) {
-	int rc;
+    int rc;
     MQTTClient_deliveryToken token;
     char topic[100];
 
+    /* create the topic from the pin number */
     sprintf(topic,"/openhab/iopins/%d/state",gpio);
 
-	MQTTClient_message m;
-	if(level==0) {
-		m = open;
-	} else if(level==1){
-		m = close;
-	} else {
-		return ;
-	}
+    /* select the message based on pin state
+     * translation:
+     *  1->"OPEN"
+     *  0->"CLOSED"
+     */
+    MQTTClient_message m;
+    if(level==0) {
+        m = open;
+    } else if(level==1){
+        m = close;
+    } else {
+        /* ignore all other states
+         * Could be 2 if timeout hits */
+        return ;
+    }
 
+    /* publish the message and wait for completion */
     MQTTClient_publishMessage(client, topic, &m, &token);
     printf("Waiting for up to %d seconds for publication of %s\n"
             "on topic %s for client with ClientID: %s\n",
             (int)(TIMEOUT/1000), m.payload, topic, CLIENTID);
+    /// this might be not necessary. Should be evaluated!
     rc = MQTTClient_waitForCompletion(client, token, TIMEOUT);
+
+    /* report to the user about errors */
     if(rc!=0) {
-		printf("Error while sending message!\n");
-	}
+        printf("Error while sending message!\n");
+        /* don't stop the program. Just report.
+        keepRunning = 0; */
+    }
 }
 
 int main(int argc, char* argv[]) {
-
-    /* Variables */
-    MQTTClient_connectOptions conn_opts = MQTTClient_connectOptions_initializer;
-    int rc,i;
 
     /* Read config */
 /*
@@ -109,13 +123,14 @@ int main(int argc, char* argv[]) {
     /* pigpio init */
     if (gpioInitialise() < 0) {
         // pigpio initialisation failed.
-        return EXIT_FAILURE;
+        exit(EXIT_FAILURE);
     }
 
 
-	/* MQTT init */
+    /* MQTT init */
     MQTTClient_create(&client, ADDRESS, CLIENTID,
         MQTTCLIENT_PERSISTENCE_NONE, NULL);
+    MQTTClient_connectOptions conn_opts = MQTTClient_connectOptions_initializer;
     conn_opts.keepAliveInterval = 20;
     conn_opts.cleansession = 1;
 
@@ -125,6 +140,7 @@ int main(int argc, char* argv[]) {
         exit(EXIT_FAILURE);
     }
 
+    /* Initialize the two possible messages */
     open = MQTTClient_message_initializer;
     open.payload = PAYLOAD1;
     open.payloadlen = strlen(PAYLOAD1);
@@ -138,17 +154,18 @@ int main(int argc, char* argv[]) {
     close.retained = 0;
 
 
-	/* set pins for observation */
-	initPinforObserve(23);
+    /* set pins for observation */
+    initPinforObserve(23);
 
-	/* init signal handling */
-	signal(SIGINT, intHandler);
+    /* init signal handling */
+    signal(SIGINT, intHandler);
 
-	/* spin around and do nothing */
-	while(keepRunning) {
-        sleep(5);
-	}
+    /* spin around and do nothing */
+    while(keepRunning) {
+        sleep(1);
+    }
 
+    /* cleanup */
     MQTTClient_disconnect(client, 10000);
     MQTTClient_destroy(&client);
     gpioTerminate();
