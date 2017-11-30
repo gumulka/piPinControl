@@ -28,36 +28,122 @@
 #define QOS         2
 #define TIMEOUT     10000L
 
-int main(int argc, char* argv[])
-{
-    MQTTClient client;
-    MQTTClient_connectOptions conn_opts = MQTTClient_connectOptions_initializer;
-    MQTTClient_message pubmsg1 = MQTTClient_message_initializer;
-    MQTTClient_message pubmsg2 = MQTTClient_message_initializer;
+MQTTClient_message open, close;
+MQTTClient client;
+
+int initPinforObserve(int pin);
+void alertFunction(int gpio, int level, uint32_t tick);
+
+
+
+int initPinforObserve(int pin) {
+	int rc = gpioSetMode(pin,PI_INPUT);
+	if(rc!=0) {
+		return rc;
+	}
+
+	int level = gpioRead(pin);
+	alertFunction(pin,level,0);
+
+	gpioSetAlertFunc(pin,alertFunction);
+}
+
+void alertFunction(int gpio, int level, uint32_t tick) {
+	int rc;
     MQTTClient_deliveryToken token;
+    char topic[100];
+
+    sprintf(topic,"/openhab/iopins/%d/state",gpio);
+
+	MQTTClient_message m;
+	if(level==0) {
+		m = open;
+	} else if(level==1){
+		m = close;
+	} else {
+		return ;
+	}
+
+    MQTTClient_publishMessage(client, topic, &m, &token);
+    printf("Waiting for up to %d seconds for publication of %s\n"
+            "on topic %s for client with ClientID: %s\n",
+            (int)(TIMEOUT/1000), m.payload, topic, CLIENTID);
+    rc = MQTTClient_waitForCompletion(client, token, TIMEOUT);
+    if(rc!=0) {
+		printf("Error while sending message!\n");
+	}
+}
+
+int main(int argc, char* argv[]) {
+
+    /* Variables */
+    MQTTClient_connectOptions conn_opts = MQTTClient_connectOptions_initializer;
     int rc,i;
 
+    /* Read config */
+/*
+ * while(there is input) {
+  get one line;
+  if (it is empty line || it beings with spaces followed by a '#') {
+    skip this line, either empty or it's a comment;
+  }
+  find the position of the token that splits option name and its value;
+  copy the option name and its value to separate variables;
+  removing spaces before and after these variables if necessary;
+  if (option == option1) {
+     parse value for option 1;
+  } else if (option == option2) {
+     parse value for option 2;
+  } else {
+     handle unknown option name;
+  }
+  check consistency of options if necessary;
+} */
+
+
+    /* pigpio init */
+    if (gpioInitialise() < 0) {
+        // pigpio initialisation failed.
+        return EXIT_FAILURE;
+    }
+
+
+	/* MQTT init */
     MQTTClient_create(&client, ADDRESS, CLIENTID,
         MQTTCLIENT_PERSISTENCE_NONE, NULL);
     conn_opts.keepAliveInterval = 20;
     conn_opts.cleansession = 1;
 
-    if ((rc = MQTTClient_connect(client, &conn_opts)) != MQTTCLIENT_SUCCESS)
-    {
+    if ((rc = MQTTClient_connect(client, &conn_opts)) != MQTTCLIENT_SUCCESS) {
         printf("Failed to connect, return code %d\n", rc);
+        gpioTerminate();
         exit(EXIT_FAILURE);
     }
-    pubmsg1.payload = PAYLOAD1;
-    pubmsg1.payloadlen = strlen(PAYLOAD1);
-    pubmsg1.qos = QOS;
-    pubmsg1.retained = 0;
 
-    pubmsg2.payload = PAYLOAD2;
-    pubmsg2.payloadlen = strlen(PAYLOAD2);
-    pubmsg2.qos = QOS;
-    pubmsg2.retained = 0;
+    open = MQTTClient_message_initializer;
+    open.payload = PAYLOAD1;
+    open.payloadlen = strlen(PAYLOAD1);
+    open.qos = QOS;
+    open.retained = 0;
+
+    close = MQTTClient_message_initializer;
+    close.payload = PAYLOAD2;
+    close.payloadlen = strlen(PAYLOAD2);
+    close.qos = QOS;
+    close.retained = 0;
+
+
+	/* set pins for observation */
+	initPinforObserve(23);
+
+
+	/* spin around and do nothing */
+	while(1) {
+        sleep(5);
+	}
+
     for(i=0;i<4;i++) {
-        MQTTClient_publishMessage(client, TOPIC, &pubmsg1, &token);
+        MQTTClient_publishMessage(client, TOPIC, &open, &token);
         printf("Waiting for up to %d seconds for publication of %s\n"
             "on topic %s for client with ClientID: %s\n",
             (int)(TIMEOUT/1000), PAYLOAD1, TOPIC, CLIENTID);
@@ -65,7 +151,7 @@ int main(int argc, char* argv[])
         if(rc!=0)
             return rc;
         sleep(1);
-        MQTTClient_publishMessage(client, TOPIC, &pubmsg2, &token);
+        MQTTClient_publishMessage(client, TOPIC, &close, &token);
         printf("Waiting for up to %d seconds for publication of %s\n"
             "on topic %s for client with ClientID: %s\n",
             (int)(TIMEOUT/1000), PAYLOAD2, TOPIC, CLIENTID);
@@ -74,8 +160,9 @@ int main(int argc, char* argv[])
             return rc;
         sleep(5);
     }
-    printf("Message with delivery token %d delivered\n", token);
+
     MQTTClient_disconnect(client, 10000);
     MQTTClient_destroy(&client);
-    return rc;
+    gpioTerminate();
+    return EXIT_SUCCESS;
 }
