@@ -3,6 +3,8 @@
 #include <string.h>
 #include <unistd.h>
 #include <signal.h>
+#include <sys/time.h>
+
 #include "MQTTClient.h"
 #include  <pigpio.h>
 
@@ -18,6 +20,8 @@
 #define BUFFER_SIZE 16
 #define PIN_OUTPUT 5
 #define STATE_FILE "/home/pi/light_state"
+
+struct timeval times[50];
 
 int initPinforObserve(int pin);
 void alertFunction(int gpio, int level, uint32_t tick);
@@ -42,6 +46,8 @@ int initPinforObserve(int pin) {
         return rc;
     }
 
+    gettimeofday(times + pin,NULL);
+
     /* read and publish the current state */
     int level = gpioRead(pin);
     alertFunction(pin,level,0);
@@ -61,8 +67,15 @@ void alertFunction(int gpio, int level, uint32_t tick) {
     sprintf(topic,"%s/%d/state",BASE_TOPIC,gpio);
 
     /* after receiving the interrupt wait for 100 ms to compensate bouncing */
-    usleep(100*1000);
-    level = gpioRead(gpio);
+    struct timeval now;
+    gettimeofday(&now,NULL);
+    double timer_elapsed = (now.tv_sec - times[gpio].tv_sec)*1000 + ((now.tv_usec - times[gpio].tv_usec)/1000.0);
+    times[gpio] = now;
+    if(timer_elapsed < 5000) {
+        /* if we are in bouncing state, then try to compensate bouncing */
+        usleep(100*1000);
+        level = gpioRead(gpio);
+    }
 
     /* select the message based on pin state
      * translation:
