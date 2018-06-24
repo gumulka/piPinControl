@@ -9,7 +9,7 @@
 #include  <pigpio.h>
 
 
-#define ADDRESS     "tcp://192.168.0.4:1883"
+#define ADDRESS     "tcp://192.168.0.2:1883"
 #define CLIENTID    "ExampleClientPub"
 #define PAYLOAD1    "OPEN"
 #define PAYLOAD2    "CLOSED"
@@ -20,6 +20,7 @@
 #define BUFFER_SIZE 16
 #define PIN_OUTPUT 5
 #define STATE_FILE "/home/pi/light_state"
+#define LOG_FILE   "/home/pi/light_log"
 
 struct timeval times[50];
 
@@ -63,6 +64,8 @@ void alertFunction(int gpio, int level, uint32_t tick) {
     MQTTClient_deliveryToken token;
     char topic[100];
 
+    printf("Pin %3d changed to %2d\n",gpio, level);
+    fflush(stdout);
     /* create the topic from the pin number */
     sprintf(topic,"%s/%d/state",BASE_TOPIC,gpio);
 
@@ -102,7 +105,7 @@ void alertFunction(int gpio, int level, uint32_t tick) {
     MQTTClient_publishMessage(client, topic, &m, &token);
 /*    printf("Waiting for up to %d seconds for publication of %s\n"
             "on topic %s for client with ClientID: %s\n",
-            (int)(TIMEOUT/1000),(char*) m.payload, topic, CLIENTID); */
+            (int)(TIMEOUT/1000),(char*) m.payload, topic, CLIENTID); // */
     /// this might be not necessary. Should be evaluated!
     rc = MQTTClient_waitForCompletion(client, token, TIMEOUT);
 
@@ -162,6 +165,8 @@ int msgarrvd(void *context, char *topicName, int topicLen, MQTTClient_message *m
         state = 0;
     }
 
+    printf("Changing pin %d to %d\n",pin,state);
+    fflush(stdout);
     if(pin >= 100) {
         spiSendCommand(pin-100,state);
     } else {
@@ -206,12 +211,12 @@ int main(int argc, char* argv[]) {
     /* pigpio init */
     if (gpioInitialise() < 0) {
         // pigpio initialisation failed.
-        printf("GPIO Initialisation failed");
+        printf("GPIO Initialisation failed\n");
         exit(EXIT_FAILURE);
     }
     spiHandle = spiOpen(1,500000,0);
     if (spiHandle < 0) {
-        printf("SPI Initialisation failed");
+        printf("SPI Initialisation failed\n");
         // pigpio initialisation failed.
         exit(EXIT_FAILURE);
     }
@@ -237,6 +242,7 @@ int main(int argc, char* argv[]) {
     }
 
 
+    printf("Connecting to mqtt\n");
     /* MQTT init */
     MQTTClient_create(&client, ADDRESS, CLIENTID,
         MQTTCLIENT_PERSISTENCE_NONE, NULL);
@@ -247,7 +253,7 @@ int main(int argc, char* argv[]) {
     MQTTClient_setCallbacks(client, NULL, connlost, msgarrvd, NULL);
 
     if ((rc = MQTTClient_connect(client, &conn_opts)) != MQTTCLIENT_SUCCESS) {
-        printf("Failed to connect, return code %d\n", rc);
+        printf("Failed to connect to mqtt broker, return code %d\n", rc);
         gpioTerminate();
         exit(EXIT_FAILURE);
     }
