@@ -268,6 +268,7 @@ int main(int argc, char* argv[]) {
     initPinforObserve(27);
     initPinforObserve(17);
     initPinforObserve(25);
+    initPinforObserve(15);
 
     /* init signal handling */
     signal(SIGINT, intHandler);
