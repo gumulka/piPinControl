@@ -158,6 +158,10 @@ int msgarrvd(void *context, char *topicName, int topicLen, MQTTClient_message *m
         state = 1;
     } else if (*payloadptr=='F') {
         state = 0;
+    } else {
+        payloadptr = message->payload;
+        if(*payloadptr >= '0' && *payloadptr <= '1')
+            state = *payloadptr - '0';
     }
 
     printf("Changing pin %d to %d\n",pin,state);
