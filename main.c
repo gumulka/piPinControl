@@ -236,48 +236,6 @@ check consistency of options if necessary;
     //        exit(EXIT_FAILURE);
   }
 
-  /* MQTT init */
-  MQTTClient_create(&client, ADDRESS, CLIENTID, MQTTCLIENT_PERSISTENCE_NONE,
-                    NULL);
-  MQTTClient_connectOptions conn_opts = MQTTClient_connectOptions_initializer;
-  conn_opts.keepAliveInterval = 20;
-  conn_opts.cleansession = 1;
-
-  MQTTClient_setCallbacks(client, NULL, connlost, msgarrvd, NULL);
-
-  /* pigpio init */
-  if (gpioInitialise() < 0) {
-    // pigpio initialisation failed.
-    printf("GPIO Initialisation failed\n");
-    exit(EXIT_FAILURE);
-  }
-  spiHandle = spiOpen(1, 500000, 0);
-  if (spiHandle < 0) {
-    printf("SPI Initialisation failed\n");
-    // pigpio initialisation failed.
-    exit(EXIT_FAILURE);
-  }
-  int rc = gpioSetMode(PIN_OUTPUT, PI_OUTPUT);
-  if (rc != 0) {
-    printf("Setting Output pin for SPI did not work\n");
-    exit(EXIT_FAILURE);
-  }
-
-  FILE *file_ptr;
-  file_ptr = fopen(STATE_FILE, "rb");
-  if (!file_ptr) {
-    printf("Unable to open state file!\n");
-    exit(EXIT_FAILURE);
-  }
-
-  /* Read in 256 8-bit numbers into the buffer */
-  int bytes_read = fread(buffer, sizeof(unsigned char), BUFFER_SIZE, file_ptr);
-  fclose(file_ptr);
-  if (bytes_read != BUFFER_SIZE) {
-    printf("Error while reading in data! %d != %d\n", bytes_read, BUFFER_SIZE);
-    //        exit(EXIT_FAILURE);
-  }
-
   printf("Connecting to mqtt\n");
   /* MQTT init */
   MQTTClient_create(&client, ADDRESS, CLIENTID, MQTTCLIENT_PERSISTENCE_NONE,
@@ -325,37 +283,4 @@ check consistency of options if necessary;
   spiClose(spiHandle);
   gpioTerminate();
   exit(EXIT_FAILURE);
-}
-
-/* Subscribe to topic */
-char topicbuffer[100];
-sprintf(topicbuffer, "%s/+/command", BASE_TOPIC);
-MQTTClient_subscribe(client, topicbuffer, QOS);
-
-/* set pins for observation */
-for (int i = 0; i < num_pins; i++) {
-  initPinforObserve(observe_pins[i]);
-}
-
-/* init signal handling */
-signal(SIGINT, intHandler);
-
-/* spin around and do nothing */
-while (keepRunning) {
-  sleep(1);
-}
-
-printf("\rShutting Down\n");
-/* cleanup */
-file_ptr = fopen(STATE_FILE, "wb");
-if (!file_ptr) {
-  printf("Unable to open file for write!\n");
-}
-fwrite(buffer, 1, bytes_read, file_ptr);
-fclose(file_ptr);
-MQTTClient_disconnect(client, 10000);
-MQTTClient_destroy(&client);
-spiClose(spiHandle);
-gpioTerminate();
-return EXIT_SUCCESS;
 }
