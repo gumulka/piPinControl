@@ -20,8 +20,8 @@
 #define STATE_FILE "/home/pi/light_state"
 #define LOG_FILE "/home/pi/light_log"
 
-static const int num_pins = 9;
-static const int observe_pins[] = {6, 18, 22, 13, 23, 24, 27, 17, 25};
+static const int num_pins = 10;
+static const int observe_pins[] = {6, 15, 18, 22, 13, 23, 24, 27, 17, 25};
 
 int initPinforObserve(int pin);
 void alertFunction(int gpio, int level, uint32_t tick);
@@ -300,16 +300,9 @@ check consistency of options if necessary;
   MQTTClient_subscribe(client, topicbuffer, QOS);
 
   /* set pins for observation */
-  initPinforObserve(6);
-  initPinforObserve(15);
-  initPinforObserve(18);
-  initPinforObserve(22);
-  initPinforObserve(13);
-  initPinforObserve(23);
-  initPinforObserve(24);
-  initPinforObserve(27);
-  initPinforObserve(17);
-  initPinforObserve(25);
+  for (int i = 0; i < num_pins; i++) {
+    initPinforObserve(observe_pins[i]);
+  }
 
   /* init signal handling */
   signal(SIGINT, intHandler);
