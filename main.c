@@ -19,7 +19,7 @@
 #define STATE_FILE "/home/pi/light_state"
 
 static const int num_pins = 9;
-static const int observe_pins[num_pins] = [ 6, 18, 22, 13, 23, 24, 27, 17, 25 ];
+static const int observe_pins[] = { 6, 18, 22, 13, 23, 24, 27, 17, 25 };
 
 int initPinforObserve(int pin);
 void alertFunction(int gpio, int level, uint32_t tick);
