@@ -5,8 +5,18 @@ LDFLAGS += -lpigpio -lpaho-mqtt3c
 
 OBJ = main.o
 
-piPinConnector: $(OBJ)
+BIN = piPinConnector
+
+.PHONY: all
+
+all: $(BIN)
+
+$(BIN): $(OBJ)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $<
+
+.PHONY: clean
+clean:
+	$(RM) $(OBJ) $(BIN)
