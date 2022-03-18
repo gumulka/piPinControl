@@ -22,6 +22,7 @@
 
 static const int num_pins = 10;
 static const int observe_pins[] = {6, 15, 18, 22, 13, 23, 24, 27, 17, 25};
+static struct timeval pinchange[10];
 
 int initPinforObserve(int pin);
 void alertFunction(int gpio, int level, uint32_t tick);
@@ -52,6 +53,15 @@ int initPinforObserve(int pin) {
   return 0;
 }
 
+long timediff(struct timeval first, struct timeval second) {
+  long long first_ms = first.tv_sec*1000 + first.tv_usec/1000;
+  long long second_ms = second.tv_sec*1000 + second.tv_usec/1000;
+  if(first_ms > second_ms) {
+    return first_ms - second_ms;
+  }
+  return second_ms - first_ms;
+}
+
 void alertFunction(int gpio, int level, uint32_t tick) {
   int rc;
   MQTTClient_deliveryToken token;
@@ -60,14 +70,28 @@ void alertFunction(int gpio, int level, uint32_t tick) {
   /* create the topic from the pin number */
   sprintf(topic, "%s/%d/state", BASE_TOPIC, gpio);
 
-  /* after receiving the interrupt wait for 100 ms to compensate bouncing */
-  usleep(150 * 1000);
-  int level2 = gpioRead(gpio);
-  if (level2 != level) {
-    printf("Pin %d changed during bouncing time.\n", gpio);
-    fflush(stdout);
-    return;
+  struct timeval now;
+  gettimeofday(&now, NULL);
+  int i;
+  for(i = 0; i<num_pins; i++) {
+    if(observe_pins[i] == gpio) {
+      break;
+    }
   }
+  if(i == num_pins) {
+    fprintf(stderr, "Could not find pin %d\n", gpio);
+  } else {
+    long timediff_ms = timediff(now, pinchange[i]);
+    fprintf(stderr, "%ld ms since last change for pin %d\n", timediff_ms, gpio);
+    pinchange[i].tv_sec = now.tv_sec;
+    pinchange[i].tv_usec = now.tv_usec;
+    if(pinchange[i].tv_sec != 0 && timediff_ms < 250) {
+      fprintf(stderr, "debouncing pin %d to %d\n", gpio, level);
+      return;
+    }
+  }
+
+
   printf("Pin %3d changed to %2d\n", gpio, level);
   fflush(stdout);
 
