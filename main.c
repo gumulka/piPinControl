@@ -151,9 +151,9 @@ int msgarrvd(void *context, char *topicName, int topicLen,
   int state = -1;
   payloadptr = message->payload;
   payloadptr++;
-  if (*payloadptr == 'N' || *payloadptr='n') {
+  if (*payloadptr == 'N' || *payloadptr == 'n') {
     state = 1;
-  } else if (*payloadptr == 'F' || *payloadptr='f') {
+  } else if (*payloadptr == 'F' || *payloadptr == 'f') {
     state = 0;
   } else {
     payloadptr = message->payload;
