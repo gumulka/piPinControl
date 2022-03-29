@@ -20,9 +20,7 @@
 #define STATE_FILE "/home/pi/light_state"
 #define LOG_FILE "/home/pi/light_log"
 
-static const int num_pins = 10;
 static const int observe_pins[] = {6, 15, 18, 22, 13, 23, 24, 27, 17, 25};
-static struct timeval pinchange[10];
 
 int initPinforObserve(int pin);
 void alertFunction(int gpio, int level, uint32_t tick);
@@ -49,6 +47,8 @@ int initPinforObserve(int pin) {
 
   /* activate pin observation */
   gpioSetAlertFunc(pin, alertFunction);
+  /* set debounce */
+  gpioGlitchFilter(pin, 100 * 1000);
 
   return 0;
 }
@@ -69,28 +69,6 @@ void alertFunction(int gpio, int level, uint32_t tick) {
 
   /* create the topic from the pin number */
   sprintf(topic, "%s/%d/state", BASE_TOPIC, gpio);
-
-  struct timeval now;
-  gettimeofday(&now, NULL);
-  int i;
-  for(i = 0; i<num_pins; i++) {
-    if(observe_pins[i] == gpio) {
-      break;
-    }
-  }
-  if(i == num_pins) {
-    fprintf(stderr, "Could not find pin %d\n", gpio);
-  } else {
-    long timediff_ms = timediff(now, pinchange[i]);
-    fprintf(stderr, "%ld ms since last change for pin %d\n", timediff_ms, gpio);
-    pinchange[i].tv_sec = now.tv_sec;
-    pinchange[i].tv_usec = now.tv_usec;
-    if(pinchange[i].tv_sec != 0 && timediff_ms < 250) {
-      fprintf(stderr, "debouncing pin %d to %d\n", gpio, level);
-      return;
-    }
-  }
-
 
   printf("Pin %3d changed to %2d\n", gpio, level);
   fflush(stdout);
@@ -282,6 +260,7 @@ check consistency of options if necessary;
   MQTTClient_subscribe(client, topicbuffer, QOS);
 
   /* set pins for observation */
+  int num_pins = sizeof(observe_pins)/sizeof(observe_pins[0]);
   for (int i = 0; i < num_pins; i++) {
     initPinforObserve(observe_pins[i]);
   }
