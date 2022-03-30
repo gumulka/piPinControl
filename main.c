@@ -9,8 +9,8 @@
 
 #define ADDRESS "tcp://192.168.0.2:1883"
 #define CLIENTID "ExampleClientPub"
-#define PAYLOAD1 "OPEN"
-#define PAYLOAD2 "CLOSED"
+#define PAYLOAD1 "ON"
+#define PAYLOAD2 "OFF"
 #define QOS 2
 #define TIMEOUT 10000L
 #define BASE_TOPIC "/openhab/gpio"
@@ -21,6 +21,7 @@
 #define LOG_FILE "/home/pi/light_log"
 
 static const int observe_pins[] = {6, 15, 18, 22, 13, 23, 24, 27, 17, 25};
+static const int output_pins[] = {101, 102, 103, 104, 105, 106, 107};
 
 int initPinforObserve(int pin);
 void alertFunction(int gpio, int level, uint32_t tick);
@@ -49,6 +50,19 @@ int initPinforObserve(int pin) {
   gpioSetAlertFunc(pin, alertFunction);
   /* set debounce */
   gpioGlitchFilter(pin, 100 * 1000);
+
+  /* publish home-assistant info message */
+  MQTTClient_deliveryToken token;
+  MQTTClient_message m = MQTTClient_message_initializer;
+  m.qos = QOS;
+  m.retained = 1;
+  char topic[64];
+  char message[128];
+  snprintf(topic, 64, "homeassistant/binary_sensor/mqtt_switch_%d/config", pin);
+  snprintf(message, 128, "{\"unique_id\": \"mqtt_switch_%d\", \"state_topic\": \"%s/%d/state\"}", pin, BASE_TOPIC, pin);
+  m.payload = message;
+  m.payloadlen = strnlen(message, 128);
+  MQTTClient_publishMessage(client, topic, &m, &token);
 
   return 0;
 }
@@ -91,7 +105,7 @@ void alertFunction(int gpio, int level, uint32_t tick) {
     return;
   }
   m.qos = QOS;
-  m.retained = 0;
+  m.retained = 1;
 
   /* publish the message and wait for completion */
   MQTTClient_publishMessage(client, topic, &m, &token);
@@ -263,6 +277,25 @@ check consistency of options if necessary;
   int num_pins = sizeof(observe_pins)/sizeof(observe_pins[0]);
   for (int i = 0; i < num_pins; i++) {
     initPinforObserve(observe_pins[i]);
+  }
+
+
+
+  /* set pins for observation */
+  num_pins = sizeof(output_pins)/sizeof(output_pins[0]);
+  for (int i = 0; i < num_pins; i++) {
+    /* publish home-assistant info message */
+    MQTTClient_deliveryToken token;
+    MQTTClient_message m = MQTTClient_message_initializer;
+    m.qos = QOS;
+    m.retained = 1;
+    char topic[64];
+    char message[128];
+    snprintf(topic, 64, "homeassistant/light/mqtt_light_%d/config", output_pins[i]);
+    snprintf(message, 128, "{\"unique_id\": \"mqtt_light_%d\", \"command_topic\": \"%s/%d/command\"}", output_pins[i], BASE_TOPIC, output_pins[i]);
+    m.payload = message;
+    m.payloadlen = strnlen(message, 128);
+    MQTTClient_publishMessage(client, topic, &m, &token);
   }
 
   /* init signal handling */
